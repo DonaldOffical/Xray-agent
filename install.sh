@@ -1570,10 +1570,6 @@ customXrayInstall() {
 	echoContent skyBlue "\n========================个性化安装============================"
 	echoContent yellow "VLESS前置，默认安装0，如果只需要安装0，则只选择0即可"
 	echoContent yellow "0.VLESS+TLS/XTLS+TCP"
-	echoContent yellow "1.VLESS+TLS+WS[CDN]"
-	echoContent yellow "2.VMess+TLS+TCP"
-	echoContent yellow "3.VMess+TLS+WS[CDN]"
-	echoContent yellow "4.Trojan、Trojan+WS[CDN]"
 	read -r -p "请选择[多选]，[例如:123]:" selectCustomInstallType
 	echoContent skyBlue "--------------------------------------------------------------"
 	if [[ -z ${selectCustomInstallType} ]]; then
