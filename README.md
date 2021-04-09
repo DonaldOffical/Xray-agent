@@ -48,7 +48,7 @@
 - Latest Version
 
 ```
-wget -P /root -N --no-check-certificate "https://raw.githubusercontent.com/DonaldOffical/v2ray-agent/master/install.sh" && chmod 700 /root/install.sh && /root/install.sh
+wget -P /root -N --no-check-certificate "https://raw.githubusercontent.com/DonaldOffical/Xray-agent/master/install.sh" && chmod 700 /root/install.sh && /root/install.sh
 ```
 
 # 许可证
