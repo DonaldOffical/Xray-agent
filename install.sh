@@ -162,6 +162,10 @@ readInstallProtocolType() {
 		if echo ${row} | grep -q VMess_WS_inbounds; then
 			currentInstallProtocolType=${currentInstallProtocolType}'3'
 		fi
+		if echo ${row} | grep -q VLESS_gRPC_inbounds; then
+			currentInstallProtocolType=${currentInstallProtocolType}'5'
+		fi
+
 	done < <(ls ${configPath} | grep inbounds.json | awk -F "[.]" '{print $1}')
 
 	if [[ -f "/etc/v2ray-agent/trojan/trojan-go" ]] && [[ -f "/etc/v2ray-agent/trojan/config_full.json" ]]; then
@@ -216,16 +220,16 @@ showInstallStatus() {
 	if [[ -n "${coreInstallType}" ]]; then
 		if [[ "${coreInstallType}" == 1 ]]; then
 			if [[ -n $(pgrep -f xray/xray) ]]; then
-				echoContent yellow "核心：Xray-core[运行中]"
+				echoContent yellow "\n核心：Xray-core[运行中]"
 			else
-				echoContent yellow "核心：Xray-core[未运行]"
+				echoContent yellow "\n核心：Xray-core[未运行]"
 			fi
 
 		elif [[ "${coreInstallType}" == 2 || "${coreInstallType}" == 3 ]]; then
 			if [[ -n $(pgrep -f v2ray/v2ray) ]]; then
-				echoContent yellow "核心：v2ray-core[运行中]"
+				echoContent yellow "\n核心：v2ray-core[运行中]"
 			else
-				echoContent yellow "核心：v2ray-core[未运行]"
+				echoContent yellow "\n核心：v2ray-core[未运行]"
 			fi
 		fi
 		# 读取协议类型
@@ -255,7 +259,11 @@ showInstallStatus() {
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 4; then
-			echoContent yellow "Trojan+TCP/WS[TLS]"
+			echoContent yellow "Trojan+TCP/WS[TLS]\c"
+		fi
+
+		if echo ${currentInstallProtocolType} | grep -q 5; then
+			echoContent yellow "VLESS+gRPC[TLS] \c"
 		fi
 	fi
 }
@@ -732,7 +740,8 @@ handleNginx() {
 		nginx
 		sleep 0.5
 		if ! ps -ef | grep -v grep | grep -q nginx; then
-			echoContent red " ---> Nginx启动失败，请检查日志"
+			echoContent red " ---> Nginx启动失败"
+			echoContent red " ---> 请手动尝试安装nginx后，再次执行脚本"
 			exit 0
 		fi
 	elif [[ "$1" == "stop" ]] && [[ -n $(pgrep -f "nginx") ]]; then
@@ -746,12 +755,12 @@ handleNginx() {
 
 # 定时任务更新tls证书
 installCronTLS() {
-	echoContent skyBlue "\n进度  $1/${totalProgress} : 添加定时维护证书"
+	echoContent skyBlue "\n进度 $1/${totalProgress} : 添加定时维护证书"
 	crontab -l >/etc/v2ray-agent/backup_crontab.cron
 	sed '/v2ray-agent/d;/acme.sh/d' /etc/v2ray-agent/backup_crontab.cron >/etc/v2ray-agent/backup_crontab.cron
 	echo "30 1 * * * /bin/bash /etc/v2ray-agent/install.sh RenewTLS" >>/etc/v2ray-agent/backup_crontab.cron
 	crontab /etc/v2ray-agent/backup_crontab.cron
-	echoContent green " ---> 添加定时维护证书成功"
+	echoContent green "\n ---> 添加定时维护证书成功"
 }
 
 # 更新证书
@@ -813,7 +822,6 @@ checkTLStatus() {
 	fi
 }
 
-
 # 安装xray
 installXray() {
 	readInstallType
@@ -853,6 +861,9 @@ xrayVersionManageMenu() {
 	echoContent red "\n=============================================================="
 	echoContent yellow "1.升级"
 	echoContent yellow "2.回退"
+	echoContent yellow "3.关闭Xray-core"
+	echoContent yellow "4.打开Xray-core"
+	echoContent yellow "5.重启Xray-core"
 	echoContent red "=============================================================="
 	read -r -p "请选择：" selectXrayType
 	if [[ "${selectXrayType}" == "1" ]]; then
@@ -872,10 +883,15 @@ xrayVersionManageMenu() {
 			echoContent red "\n ---> 输入有误，请重新输入"
 			xrayVersionManageMenu 1
 		fi
+	elif [[ "${selectXrayType}" == "3" ]]; then
+		handleXray stop
+	elif [[ "${selectXrayType}" == "4" ]]; then
+		handleXray start
+	elif [[ "${selectXrayType}" == "5" ]]; then
+		reloadCore
 	fi
 
 }
-
 # 更新Xray
 updateXray() {
 	readInstallType
@@ -1020,7 +1036,6 @@ handleXray() {
 		fi
 	fi
 }
-
 
 # 初始化Xray 配置文件
 initXrayConfig() {
@@ -1238,6 +1253,38 @@ EOF
 EOF
 	fi
 
+	if echo "${selectCustomInstallType}" | grep -q 5 || [[ "$1" == "all" ]]; then
+		fallbacksList=${fallbacksList}',{"alpn":"h2","dest":31301,"xver":0}'
+		cat <<EOF >/etc/v2ray-agent/xray/conf/06_VLESS_gRPC_inbounds.json
+{
+    "inbounds":[
+    {
+        "port": 31301,
+        "listen": "127.0.0.1",
+        "protocol": "vless",
+        "tag":"VLESSGRPC",
+        "settings": {
+            "clients": [
+                {
+                    "id": "${uuid}",
+                    "add": "${add}",
+                    "email": "${domain}_vless_grpc"
+                }
+            ],
+            "decryption": "none"
+        },
+        "streamSettings": {
+            "network": "grpc",
+            "grpcSettings": {
+                "serviceName": "${customPath}grpc"
+            }
+        }
+    }
+]
+}
+EOF
+	fi
+
 	# VLESS_TCP
 	cat <<EOF >/etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json
 {
@@ -1266,7 +1313,8 @@ EOF
     "xtlsSettings": {
       "minVersion": "1.2",
       "alpn": [
-        "http/1.1"
+        "http/1.1",
+        "h2"
       ],
       "certificates": [
         {
@@ -1381,15 +1429,6 @@ updateNginxBlog() {
 	fi
 }
 
-# 更换端口
-changeCorePort() {
-	read -r -p "请输入要更换的端口号:" newPort
-	if [[ -n "${newPort}" ]]; then
-		vlessTcpResult=$(jq -r ".inbounds[0].port=${newPort}" ${configPath}02_VLESS_TCP_inbounds.json)
-		echo "${vlessTcpResult}" | jq . >${configPath}02_VLESS_TCP_inbounds.json
-		reloadCore
-	fi
-}
 # 卸载脚本
 unInstall() {
 	read -r -p "是否确认卸载安装内容？[y/n]:" unInstallStatus
@@ -1406,13 +1445,13 @@ unInstall() {
 
 	handleV2Ray stop
 	handleTrojanGo stop
-	handleMTG stop
+	#	handleMTG stop
 
 	rm -rf /etc/systemd/system/v2ray.service
 	echoContent green " ---> 删除V2Ray开机自启完成"
 
-	rm -rf /etc/systemd/system/mtg.service
-	echoContent green " ---> 删除MTG开机自启完成"
+	#	rm -rf /etc/systemd/system/mtg.service
+	#	echoContent green " ---> 删除MTG开机自启完成"
 
 	rm -rf /etc/systemd/system/trojan-go.service
 	echoContent green " ---> 删除Trojan-Go开机自启完成"
@@ -1429,7 +1468,7 @@ unInstall() {
 	rm -rf /usr/bin/vasma
 	rm -rf /usr/sbin/vasma
 	echoContent green " ---> 卸载快捷方式完成"
-	echoContent green " ---> 卸载v2ray-agent完成"
+	echoContent green " ---> 卸载v2ray-agent脚本完成"
 }
 
 # 自定义uuid
@@ -1487,14 +1526,24 @@ checkLog() {
 	if [[ -z ${configPath} ]]; then
 		echoContent red " ---> 没有检测到安装目录，请执行脚本安装内容"
 	fi
+	local logStatus=false
+	if [[ -n $(cat ${configPath}00_log.json | grep access) ]]; then
+		logStatus=true
+	fi
+
 	echoContent skyBlue "\n功能 $1/${totalProgress} : 查看日志"
 	echoContent red "\n=============================================================="
-	echoContent yellow "# 建议仅调试打开access日志\n"
-	echoContent yellow "1.打开access日志"
-	echoContent yellow "2.关闭access日志"
-	echoContent yellow "3.监听access日志"
-	echoContent yellow "4.监听error日志"
-	echoContent yellow "5.清空日志"
+	echoContent yellow "# 建议仅调试时打开access日志\n"
+
+	if [[ "${logStatus}" == "false" ]]; then
+		echoContent yellow "1.打开access日志"
+	else
+		echoContent yellow "1.关闭access日志"
+	fi
+
+	echoContent yellow "2.监听access日志"
+	echoContent yellow "3.监听error日志"
+	echoContent yellow "4.清空日志"
 	echoContent red "=============================================================="
 
 	read -r -p "请选择：" selectAccessLogType
@@ -1502,7 +1551,8 @@ checkLog() {
 
 	case ${selectAccessLogType} in
 	1)
-		cat <<EOF >${configPath}00_log.json
+		if [[ "${logStatus}" == "false" ]]; then
+			cat <<EOF >${configPath}00_log.json
 {
   "log": {
   	"access":"${configPathLog}access.log",
@@ -1510,12 +1560,9 @@ checkLog() {
     "loglevel": "warning"
   }
 }
-
 EOF
-		reloadCore
-		;;
-	2)
-		cat <<EOF >${configPath}00_log.json
+		elif [[ "${logStatus}" == "true" ]]; then
+			cat <<EOF >${configPath}00_log.json
 {
   "log": {
     "error": "${configPathLog}error.log",
@@ -1523,15 +1570,17 @@ EOF
   }
 }
 EOF
+		fi
 		reloadCore
+		checkLog 1
 		;;
-	3)
+	2)
 		tail -f ${configPathLog}access.log
 		;;
-	4)
+	3)
 		tail -f ${configPathLog}error.log
 		;;
-	5)
+	4)
 		echo >${configPathLog}access.log
 		echo >${configPathLog}error.log
 		;;
@@ -1575,7 +1624,7 @@ customXrayInstall() {
 	if [[ -z ${selectCustomInstallType} ]]; then
 		echoContent red " ---> 不可为空"
 		customXrayInstall
-	elif [[ "${selectCustomInstallType}" =~ ^[0-4]+$ ]]; then
+	elif [[ "${selectCustomInstallType}" =~ ^[0-5]+$ ]]; then
 		cleanUp v2rayClean
 		totalProgress=17
 		installTools 1
@@ -1585,7 +1634,7 @@ customXrayInstall() {
 		handleNginx stop
 		initNginxConfig 4
 		# 随机path
-		if echo "${selectCustomInstallType}" | grep -q 1 || echo "${selectCustomInstallType}" | grep -q 3 || echo "${selectCustomInstallType}" | grep -q 4; then
+		if echo "${selectCustomInstallType}" | grep -q 1 || echo "${selectCustomInstallType}" | grep -q 3 || echo "${selectCustomInstallType}" | grep -q 4 || echo "${selectCustomInstallType}" | grep -q 5; then
 			randomPathFunction 5
 			customCDNIP 6
 		fi
@@ -1715,9 +1764,8 @@ menu() {
 	cd "$HOME" || exit
 	echoContent red "\n=============================================================="
 	echoContent green "作者：mack-a"
-	echoContent green "当前版本：v2.4.11"
 	showInstallStatus
-	echoContent red "=============================================================="
+	echoContent red "\n=============================================================="
 	if [[ -n "${coreInstallType}" ]]; then
 		echoContent yellow "1.重新安装"
 	else
@@ -1728,12 +1776,11 @@ menu() {
 	echoContent skyBlue "-------------------------工具管理-----------------------------"
 	echoContent yellow "3.更换伪装站"
 	echoContent yellow "4.更新证书"
-	echoContent yellow "5.更换端口"
 	echoContent skyBlue "-------------------------版本管理-----------------------------"
-	echoContent yellow "6.core版本管理"
+	echoContent yellow "5.core管理"
 	echoContent skyBlue "-------------------------脚本管理-----------------------------"
-	echoContent yellow "7.查看日志"
-	echoContent yellow "8.卸载脚本"
+	echoContent yellow "6.查看日志"
+	echoContent yellow "7.卸载脚本"
 	echoContent red "=============================================================="
 	mkdirTools
 	aliasInstall
@@ -1752,15 +1799,12 @@ menu() {
 		renewalTLS 1
 		;;
 	5)
-		changeCorePort 1
-		;;
-	6)
 		coreVersionManageMenu 1
 		;;
-	7)
+	6)
 		checkLog 1
 		;;
-	8)
+	7)
 		unInstall 1
 		;;
 	esac
